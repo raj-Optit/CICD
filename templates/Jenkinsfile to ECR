@@ -1,0 +1,96 @@
+@Library('shared-libraries') _
+def gitCheckoutScript
+def buildWithGradleScript
+def sonarscript
+def dockerBuildScript
+def dockerPublishscript
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Branch to build from')
+        string(name: 'GIT_URL', defaultValue: 'https://github.com/bharathkoptit/build_js_react_app.git', description: 'Git repository URL')
+        string(name: 'DOCKER_IMAGE_NAME', defaultValue: 'reactjs', description: 'Docker image name')
+        string(name: 'DOCKER_IMAGE_TAG', defaultValue: 'latest', description: 'Docker repository')
+        string(name: 'AWS_REGION', defaultValue: 'us-west-2', description: 'AWS Region')
+        string(name: 'AWS_ACCOUNT_ID', defaultValue: '23456571', description: 'AWS account ID')
+        string(name: 'SONAR_PROJECT_KEY', defaultValue: 'myorganisation2_myproject2', description: 'SonarQube project key')
+        string(name: 'SONAR_ORGANIZATION', defaultValue: 'myorganisation2', description: 'SonarQube organization key')
+        string(name: 'SONAR_SOURCES_DIR', defaultValue: 'src', description: 'Source code directory for SonarQube analysis')
+        string(name: 'SONAR_BINARIES_DIR', defaultValue: 'build/classes', description: 'Binary directory for SonarQube analysis')
+        string(name: 'SONAR_TOKEN', defaultValue: 'ce67848db2f41c69d4a11bc021d63362ebd70d22', description: 'SonarQube authentication token')
+    }
+
+    stages {
+        stage('Git Checkout CICD Repo') {
+            steps {
+                script {
+                    dir('cicd-repo') {
+                        git branch: 'main',
+                            credentialsId: 'bkgit',
+                            url: 'https://github.com/optimize-it/CICD.git'
+                    }
+                }
+            }
+        }
+        
+        stage('Load DSL') {
+            steps {
+                script {
+                    gitCheckoutScript = load './cicd-repo/Jenkins/shared-libraries/vars/common/scm-util/git/GitCheckout.groovy'
+                    buildWithGradleScript = load './cicd-repo/Jenkins/shared-libraries/src/org/common/build/Reactjs/BuildWithReactjs.groovy'
+                    sonarscript = load './cicd-repo/Jenkins/shared-libraries/vars/common/code-analysis/sonarqube-util/sonarCloudAnalysis.groovy'
+                    dockerBuildScript = load './cicd-repo/Jenkins/shared-libraries/vars/common/docker-util/DockerBuild.groovy'
+                    dockerPublishscript = load './cicd-repo/Jenkins/shared-libraries/vars/common/docker-util/PushImageToECR'
+                }
+            }
+        }
+
+        stage('Git Checkout') {
+            steps {
+                script {
+                    gitCheckoutScript.gitCheckout(params.BRANCH_NAME, params.GIT_URL, 'bkgit')
+                }
+            }
+        }
+
+        stage('Build with React') {
+            steps {
+                script {
+                    buildWithGradleScript.buildWithNpm()
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    sonarscript.sonarCloudAnalysis(
+                        params.SONAR_PROJECT_KEY,
+                        params.SONAR_ORGANIZATION,
+                        params.SONAR_SOURCES_DIR,
+                        params.SONAR_BINARIES_DIR,
+                        params.SONAR_TOKEN
+                    )
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    dockerBuildScript.dockerBuild(params.DOCKER_IMAGE_NAME)
+                }
+            }
+        }
+
+        stage('Docker Publish') {
+            steps {
+                script {
+                    dockerPublishscript.ImageToECR(params.AWS_REGION, params.AWS_ACCOUNT_ID, params.DOCKER_IMAGE_NAME, params.DOCKER_IMAGE_TAG)
+                }
+            }
+        }
+    }
+}
