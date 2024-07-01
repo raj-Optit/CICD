@@ -1,0 +1,53 @@
+@Library('shared-libraries') _
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'GIT_URL', description: 'Git repository URL for helm-chart')
+        string(name: 'GIT_BRANCH_NAME', description: 'Source Code Branch to deploy')
+        credentials(name: 'GIT_CREDENTIAL', description: 'Jenkins credential for Git repo', required: true)
+        string(name: 'PLAYBOOK_PATH', description: 'Ansible Playbook to deploy')
+        string(name: 'INVENTORY_FILE_PATH', description: 'Source Code Branch to deploy')
+        string(name: 'KEY1', description: 'Variable1')
+        string(name: 'VALUE1', description: 'Value for variable1')
+        string(name: 'KEY2', description: 'Variable2')
+        string(name: 'VALUE2', description: 'Value for variable2')
+        }
+
+    stages {
+        stage('Load Scripts') {
+            steps {
+                script {
+                    // Define baseDir for Jenkins shared libraries
+                    def baseDir = "${env.WORKSPACE}/Jenkins/shared-libraries"
+
+                    // Load scripts using dynamically constructed paths
+                    def loadScript = { type, technology, scriptName ->
+                        def scriptPath = "${baseDir}/${type}/${technology}/${scriptName}.groovy"
+                        return load(scriptPath)
+                    }
+
+                    // Load scripts from 'vars' directory
+                    gitCheckoutScript = loadScript('vars/common/scm-util', 'git', 'GitCheckout')
+                    ansiblePlaybookScript = loadScript('vars/common', 'Deploy', 'AnsibleWithExtraVar')
+                }
+            }
+        }
+
+        stage('Git Checkout') {
+            steps {
+                script {
+                    gitCheckoutScript.gitCheckout(params.GIT_BRANCH_NAME, params.GIT_URL, params.GIT_CREDENTIAL)
+                }
+            }
+        }
+       stage('Ansible Playbook') {
+            steps {
+                script {
+                    ansiblePlaybookScript.playbook(params.INVENTORY_FILE_PATH, params.PLAYBOOK_PATH, params.KEY1, params.VALUE1, params.KEY2, params.VALUE2)
+                }
+            }
+        }
+    }
+}
