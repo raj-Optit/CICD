@@ -2,7 +2,7 @@ def call(Map pipelineParams) {
     try {
             stage('ansible-run') {
                 println pipelineParams
-                dir("$pipelineParams.currentWs/private") {
+                dir("$pipelineParams.currentWs") {
                     if (!env.private_repo_url || !env.private_repo_branch || !env.private_repo_credentials) {
                         println('''\
                                Uh Oh! Please create Jenkins environment variables named
@@ -20,12 +20,10 @@ def call(Map pipelineParams) {
                     checkout scm: [$class: 'GitSCM', branches: [[name: private_repo_branch]], extensions: [[$class: 'CloneOption', depth: 1, noTags: true, reference: '', shallow: true]], userRemoteConfigs: [[credentialsId: private_repo_credentials, url: private_repo_url]]]
                 }
 
-                inventory_path = "${pipelineParams.currentWs}/ansible/inventory/env"
+                inventory_path = "${pipelineParams.currentWs}/ansible/inventory"
                 sh """
-                        rsync -Lkr ${pipelineParams.currentWs}/private/ansible/inventory/${pipelineParams.env}/${pipelineParams.module}/* ${pipelineParams.currentWs}/ansible/inventory/env/
-                        //if [ -f ${pipelineParams.currentWs}/ansible/inventory/env/kubernetes.yaml ]; then
-                           // cat ${pipelineParams.currentWs}/ansible/inventory/env/kubernetes.yaml >> ${pipelineParams.currentWs}/ansible/inventory/env/common.yml
-                        //fi
+                        rsync -Lkr ${pipelineParams.currentWs}/ansible/inventory/* ${pipelineParams.currentWs}/ansible/inventory/
+                        
                         ansible-playbook -i ${inventory_path}/hosts $pipelineParams.ansiblePlaybook $pipelineParams.ansibleExtraArgs
                      """
             }
