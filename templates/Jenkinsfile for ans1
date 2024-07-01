@@ -1,0 +1,59 @@
+@Library('shared-libraries') _
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'GIT_URL', description: 'Git repository URL for helm-chart')
+        string(name: 'GIT_BRANCH_NAME', description: 'Source Code Branch to deploy')
+        credentials(name: 'GIT_CREDENTIAL', description: 'Jenkins credential for Git repo', required: true)
+        //string(name: 'PLAYBOOK_PATH', description: 'Ansible Playbook to deploy')
+        string(name: 'private_repo_url', description: 'Private Repo URL - Secrets Store')
+        string(name: 'private_repo_branch ', description: 'Private Repo Branch')
+        string(name: 'private_repo_credentials', description: 'Private Repo Credential')
+        }
+
+    stages {
+        stage('Load Scripts') {
+            steps {
+                script {
+                    // Define baseDir for Jenkins shared libraries
+                    def baseDir = "${env.WORKSPACE}/Jenkins/shared-libraries"
+
+                    // Load scripts using dynamically constructed paths
+                    def loadScript = { type, technology, scriptName ->
+                        def scriptPath = "${baseDir}/${type}/${technology}/${scriptName}.groovy"
+                        return load(scriptPath)
+                    }
+
+                    // Load scripts from 'vars' directory
+                    gitCheckoutScript = loadScript('vars/common/scm-util', 'git', 'GitCheckout')
+                    ansiblePlaybookScript = loadScript('vars/common', 'Deploy', 'Ansible')
+                }
+            }
+        }
+
+        stage('Git Checkout') {
+            steps {
+                script {
+                    gitCheckoutScript.gitCheckout(params.GIT_BRANCH_NAME, params.GIT_URL, params.GIT_CREDENTIAL)
+                }
+            }
+        }
+       stage('deploy') {
+                values = [:]
+                currentWs = sh(returnStdout: true, script: 'pwd').trim()
+                jobName = sh(returnStdout: true, script: "echo $JOB_NAME").split('/')[-1].trim()
+                ansiblePlaybook = "${currentWs}/ansible/test.yml"
+                ansibleExtraArgs = "--vault-password-file /var/lib/jenkins/secrets/vault-pass -v"
+                values.put('currentWs', currentWs)
+                values.put('jobName', jobName)
+                values.put('ansiblePlaybook', ansiblePlaybook)
+                values.put('ansibleExtraArgs', ansibleExtraArgs)
+                println values
+                ansiblePlaybookScript.ansible_playbook_run(values)
+                currentBuild.result = 'SUCCESS'
+                currentBuild.description = "Private: ${params.private_branch}"
+       }
+    }
+}
